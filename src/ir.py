@@ -247,13 +247,13 @@ class StoreInst(Instruction):
 class GepInst(Instruction):
     lhs: Variable
     src_ptr: Variable
-    index: Operand
+    array_index: Operand
     field_name: str
 
-    def __init__(self, lhs, src_ptr, index, field_name):
+    def __init__(self, lhs, src_ptr, array_index, field_name):
         self.lhs = lhs
         self.src_ptr = src_ptr
-        self.index = index
+        self.array_index = array_index
         self.field_name = field_name
 
 
