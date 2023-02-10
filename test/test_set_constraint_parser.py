@@ -1,4 +1,5 @@
 from analysis.set_constraints import SetConstraints, Call, Proj, SetVariable
+from util import diff
 
 
 def test_parser():
@@ -6,10 +7,8 @@ def test_parser():
     def constructor cons1, arity 2, contravariant positions 0 1
     def constructor cons2, arity 1, contravariant positions
     def constructor cons3, arity 0, contravariant positions
-    
     def set variable var1
     def set variable var2
-    
     call(cons2, var1) <= var2
     var1 <= proj(cons1, var2, 1)
     call(cons3) <= var1
@@ -65,6 +64,11 @@ def test_parser():
     assert set_constraints.constraints[3].right.args[0].constructor is set_constraints.get_constructor("cons2")
     assert set_constraints.constraints[3].right.args[0].var is set_constraints.get_set_variable("var1")
     assert set_constraints.constraints[3].right.args[0].index == 0
+
+    clean_text = "\n".join(map(lambda s: s.strip(), text.splitlines()))
+    d = diff(set_constraints.carl().strip(), clean_text.strip())
+    print(d)
+    assert d == ""
 
 
 if __name__ == "__main__":

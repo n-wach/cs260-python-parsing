@@ -11,6 +11,9 @@ class SetVariable:
     def __str__(self):
         return self.name
 
+    def carl(self):
+        return f"def set variable {self.name}"
+
 
 class Constructor:
     def __init__(self, name: str, arity: int, contravariant_positions: List[int]):
@@ -20,6 +23,9 @@ class Constructor:
 
     def __str__(self):
         return self.name
+
+    def carl(self):
+        return f"def constructor {self.name}, arity {self.arity}, contravariant positions {' '.join(map(str, self.contravariant_positions))}".strip()
 
 
 class Proj:
@@ -38,6 +44,8 @@ class Call:
         self.args = args
 
     def __str__(self):
+        if len(self.args) == 0:
+            return f"call({self.constructor})"
         return f"call({self.constructor}, {', '.join(map(str, self.args))})"
 
 
@@ -159,3 +167,12 @@ class SetConstraints:
                 return set_variable
         assert False
 
+    def carl(self):
+        s = ""
+        for constructor in self.constructors:
+            s += constructor.carl() + "\n"
+        for set_variable in self.set_variables:
+            s += set_variable.carl() + "\n"
+        for constraint in self.constraints:
+            s += str(constraint) + "\n"
+        return s
