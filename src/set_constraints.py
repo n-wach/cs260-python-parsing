@@ -165,7 +165,9 @@ class SetConstraints:
         for set_variable in self.set_variables:
             if set_variable.name == name:
                 return set_variable
-        assert False
+        set_var = SetVariable(name)
+        self.set_variables.append(set_var)
+        return set_var
 
     def carl(self):
         s = ""
