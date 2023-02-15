@@ -4,9 +4,11 @@ import re
 
 class Parser:
     remaining_text: str
+    address_taken_functions: Set[str]
 
     def __init__(self, text: str):
         self.remaining_text = text.strip()
+        self.address_taken_functions = set()
 
     def consume(self, expression):
         result = re.match(f"^({expression})(.*)$", self.remaining_text, flags=re.DOTALL)
@@ -26,6 +28,9 @@ class Parser:
     def parse_program(self) -> Program:
         structs = self.parse_structs()
         functions = self.parse_functions()
+        for func in functions:
+            if func.name in self.address_taken_functions:
+                func.address_taken = True
         return Program(structs, functions)
 
     def parse_structs(self) -> List[Struct]:
@@ -248,6 +253,7 @@ class Parser:
         name = self.parse_varname()
         self.consume(":")
         type_ = self.parse_type()
+        self.address_taken_functions.add(name)
         return ConstFuncOperand(name, type_)
 
     def parse_variable(self) -> Variable:

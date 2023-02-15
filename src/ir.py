@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 import enum
-from typing import *
+from typing import Dict, List
 
 
 class Type:
@@ -12,6 +11,12 @@ class Type:
     def __init__(self, base_type, indirection=0):
         self.base_type = base_type
         self.indirection = indirection
+
+    def as_fake_var(self):
+        return f"any_of({self})"
+
+    def __str__(self):
+        return f"{self.base_type}{'*' * self.indirection}"
 
 
 class StructField:
@@ -40,6 +45,9 @@ class Variable:
         self.name = name
         self.type = type_
 
+    def __str__(self):
+        return self.name
+
 
 class Operand:
     pass
@@ -67,12 +75,18 @@ class ConstFuncOperand(Operand):
         self.function = function
         self.type = type_
 
+    def __str__(self):
+        return f"@{self.function}"
+
 
 class ConstNullPtrOperand(Operand):
     type: Type
 
     def __init__(self, type_):
         self.type = type_
+
+    def __str__(self):
+        return "@nullptr"
 
 
 class Program:
@@ -83,6 +97,12 @@ class Program:
         self.structs = structs
         self.functions = functions
 
+    def get_function(self, func_name):
+        for func in self.functions:
+            if func.name == func_name:
+                return func
+        return None
+
 
 class Function:
     name: str
@@ -90,6 +110,8 @@ class Function:
     parameters: List[Variable]
     basic_blocks: Dict[str, BasicBlock]
     entry: BasicBlock
+    type: Type
+    address_taken: bool
 
     def __init__(self, name, return_type, parameters, basic_blocks):
         self.name = name
@@ -102,6 +124,9 @@ class Function:
         self.entry = self.basic_blocks["entry"]
         for basic_block in self.basic_blocks.values():
             basic_block.resolve_labels()
+        type_str = f"{return_type}[{','.join(str(p.type) for p in parameters)}]"
+        self.type = Type(type_str)
+        self.address_taken = False
 
     def __repr__(self):
         return f"<Function {self.name}>"
@@ -114,6 +139,8 @@ class BasicBlock:
     terminal: TerminalInst
 
     def __init__(self, label, body):
+        self.entry_store = None
+        self.terminal_store = None
         self.label = label
         self.body = body
         self.terminal = body[-1]
@@ -143,6 +170,7 @@ class Instruction:
     index: int
     parent_block: BasicBlock
 
+    @property
     def program_point(self):
         return f"{self.parent_block.name}.{self.index}"
 
@@ -236,17 +264,17 @@ class LoadInst(Instruction):
 
 
 class StoreInst(Instruction):
-    lhs: Variable
+    dest: Variable
     value: Operand
 
-    def __init__(self, lhs, value):
-        self.lhs = lhs
+    def __init__(self, dest, value):
+        self.dest = dest
         self.value = value
 
 
 class GepInst(Instruction):
     lhs: Variable
-    src_ptr: Variable
+    src_ptr: Operand
     array_index: Operand
     field_name: str
 
@@ -285,7 +313,7 @@ class CallInst(Instruction):
 class ICallInst(Instruction):
     # indirect function call "lhs = (*func_ptr)(args)".
     lhs: Variable
-    function: Variable
+    function: Operand
     args: List[Operand]
 
     def __init__(self, lhs, function, args):

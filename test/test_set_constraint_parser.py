@@ -4,70 +4,37 @@ from util import diff
 
 def test_parser():
     text = """
-    def constructor cons1, arity 2, contravariant positions 0 1
-    def constructor cons2, arity 1, contravariant positions
-    def constructor cons3, arity 0, contravariant positions
-    def set variable var1
-    def set variable var2
-    call(cons2, var1) <= var2
-    var1 <= proj(cons1, var2, 1)
-    call(cons3) <= var1
-    call(cons2, call(cons1, call(cons3), call(cons2, call(cons3)))) <= call(cons2, proj(cons2, var1, 0))
+    def constructor c1, arity 1, contravariant positions
+    def constructor c2, arity 0, contravariant positions
+    def constructor c3, arity 2, contravariant positions 1
+    def constructor c4, arity 1, contravariant positions
+    def constructor c5, arity 3, contravariant positions 0 1 2
+    call(c1, C1) <= V1
+    V1 <= v2
+    call(c2) <= proj(c1, v2, 0)
+    proj(c1, v2, 0) <= v3
+    call(c3, call(c4, x), y) <= call(c3, a, call(c2))
+    call(c5, a, b, c) <= call(c5, call(c2), call(c2), call(c2))
+    V1 <= a
+    v2 <= b
     """
     set_constraints = SetConstraints.parse(text)
-    assert len(set_constraints.constructors) == 3
-    assert len(set_constraints.set_variables) == 2
-    assert len(set_constraints.constraints) == 4
+    assert len(set_constraints.constructors) == 5
+    assert len(set_constraints.set_variables) == 9
+    assert len(set_constraints.constraints) == 8
 
-    # call(cons2, var1) <= var2
-    assert isinstance(set_constraints.constraints[0].left, Call)
-    assert set_constraints.constraints[0].left.constructor is set_constraints.get_constructor("cons2")
-    assert set_constraints.constraints[0].left.args[0] is set_constraints.get_set_variable("var1")
-    assert isinstance(set_constraints.constraints[0].right, SetVariable)
-    assert set_constraints.constraints[0].right is set_constraints.get_set_variable("var2")
+    # check some things...
+    assert set_constraints.constraints[0].left.constructor is set_constraints.get_constructor("c1")
+    assert set_constraints.constraints[0].right is set_constraints.get_set_variable("V1")
 
-    # var1 <= proj(cons1, var2, 1)
-    assert isinstance(set_constraints.constraints[1].left, SetVariable)
-    assert set_constraints.constraints[1].left is set_constraints.get_set_variable("var1")
-    assert isinstance(set_constraints.constraints[1].right, Proj)
-    assert set_constraints.constraints[1].right.constructor is set_constraints.get_constructor("cons1")
-    assert set_constraints.constraints[1].right.var is set_constraints.get_set_variable("var2")
-    assert set_constraints.constraints[1].right.index == 1
+    assert set_constraints.constraints[2].right.constructor is set_constraints.get_constructor("c1")
+    assert set_constraints.constraints[2].right.var is set_constraints.get_set_variable("v2")
 
-    # call(cons3) <= var1
-    assert isinstance(set_constraints.constraints[2].left, Call)
-    assert set_constraints.constraints[2].left.constructor is set_constraints.get_constructor("cons3")
-    assert set_constraints.constraints[2].left.args == []
-    assert isinstance(set_constraints.constraints[2].right, SetVariable)
-    assert set_constraints.constraints[2].right is set_constraints.get_set_variable("var1")
+    assert set_constraints.constraints[5].right.args[2].constructor is set_constraints.get_constructor("c2")
 
-    # call(cons2, call(cons1, call(cons3), call(cons2, call(cons3)))) <= call(cons2, proj(cons2, var1, 0))
-    assert isinstance(set_constraints.constraints[3].left, Call)
-    assert set_constraints.constraints[3].left.constructor is set_constraints.get_constructor("cons2")
-    assert len(set_constraints.constraints[3].left.args) == 1
-    assert isinstance(set_constraints.constraints[3].left.args[0], Call)
-    assert set_constraints.constraints[3].left.args[0].constructor is set_constraints.get_constructor("cons1")
-    assert len(set_constraints.constraints[3].left.args[0].args) == 2
-    assert isinstance(set_constraints.constraints[3].left.args[0].args[0], Call)
-    assert set_constraints.constraints[3].left.args[0].args[0].constructor is set_constraints.get_constructor("cons3")
-    assert set_constraints.constraints[3].left.args[0].args[0].args == []
-    assert isinstance(set_constraints.constraints[3].left.args[0].args[1], Call)
-    assert set_constraints.constraints[3].left.args[0].args[1].constructor is set_constraints.get_constructor("cons2")
-    assert len(set_constraints.constraints[3].left.args[0].args[1].args) == 1
-    assert isinstance(set_constraints.constraints[3].left.args[0].args[1].args[0], Call)
-    assert set_constraints.constraints[3].left.args[0].args[1].args[0].constructor is set_constraints.get_constructor("cons3")
-    assert set_constraints.constraints[3].left.args[0].args[1].args[0].args == []
-    assert isinstance(set_constraints.constraints[3].right, Call)
-    assert set_constraints.constraints[3].right.constructor is set_constraints.get_constructor("cons2")
-    assert len(set_constraints.constraints[3].right.args) == 1
-    assert isinstance(set_constraints.constraints[3].right.args[0], Proj)
-    assert set_constraints.constraints[3].right.args[0].constructor is set_constraints.get_constructor("cons2")
-    assert set_constraints.constraints[3].right.args[0].var is set_constraints.get_set_variable("var1")
-    assert set_constraints.constraints[3].right.args[0].index == 0
-
+    # check that the output is the same (ignoring white space)
     clean_text = "\n".join(map(lambda s: s.strip(), text.splitlines()))
-    d = diff(set_constraints.carl().strip(), clean_text.strip())
-    print(d)
+    d = diff(set_constraints.to_text().strip(), clean_text.strip())
     assert d == ""
 
 
