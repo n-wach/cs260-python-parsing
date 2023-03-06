@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import abc
 import enum
 from typing import Dict, List
 
@@ -48,9 +49,13 @@ class Variable:
     def __str__(self):
         return self.name
 
+    def output(self):
+        return f"{self.name}:{self.type}"
+
 
 class Operand:
-    pass
+    def output(self):
+        raise NotImplementedError
 
 
 class VarOperand(Operand):
@@ -59,12 +64,18 @@ class VarOperand(Operand):
     def __init__(self, variable):
         self.variable = variable
 
+    def output(self):
+        return f"{self.variable.name}:{self.variable.type}"
+
 
 class ConstIntOperand(Operand):
     value: int
 
     def __init__(self, value):
         self.value = value
+
+    def output(self):
+        return f"{self.value}"
 
 
 class ConstFuncOperand(Operand):
@@ -78,6 +89,9 @@ class ConstFuncOperand(Operand):
     def __str__(self):
         return f"@{self.function}"
 
+    def output(self):
+        return f"@{self.function}:{self.type}"
+
 
 class ConstNullPtrOperand(Operand):
     type: Type
@@ -87,6 +101,9 @@ class ConstNullPtrOperand(Operand):
 
     def __str__(self):
         return "@nullptr"
+
+    def output(self):
+        return f"@nullptr:{self.type}"
 
 
 class Program:
@@ -103,6 +120,30 @@ class Program:
                 return func
         return None
 
+    def get_inst(self, program_point) -> Instruction:
+        # program point is "<function name>.<block label>.<inst index>"
+        func_name, block_label, inst_index = program_point.split(".")
+        func = self.get_function(func_name)
+        if func is None:
+            raise ValueError(f"Program point {program_point} has invalid function name {func_name}")
+        block = func.basic_blocks.get(block_label)
+        if block is None:
+            raise ValueError(f"Program point {program_point} has invalid block label {block_label}")
+        if int(inst_index) >= len(block.body):
+            raise ValueError(f"Program point {program_point} has invalid instruction index {inst_index}")
+        return block.body[int(inst_index)]
+
+    def output(self) -> str:
+        out = ""
+        for struct in self.structs:
+            out += f"struct {struct.name} {{\n"
+            for field in struct.fields:
+                out += f"  {field.name}: {field.type}\n"
+            out += "}\n\n"
+        for func in self.functions:
+            out += func.output()
+        return out
+
 
 class Function:
     name: str
@@ -110,6 +151,7 @@ class Function:
     parameters: List[Variable]
     basic_blocks: Dict[str, BasicBlock]
     entry: BasicBlock
+    exit: BasicBlock
     type: Type
     address_taken: bool
 
@@ -121,15 +163,24 @@ class Function:
         for basic_block in basic_blocks:
             self.basic_blocks[basic_block.label] = basic_block
             basic_block.parent_function = self
-        self.entry = self.basic_blocks["entry"]
+        self.entry = self.basic_blocks.get("entry")
         for basic_block in self.basic_blocks.values():
             basic_block.resolve_labels()
+            if isinstance(basic_block.terminal, RetInst):
+                self.exit = basic_block
         type_str = f"{return_type}[{','.join(str(p.type) for p in parameters)}]"
         self.type = Type(type_str)
         self.address_taken = False
 
     def __repr__(self):
         return f"<Function {self.name}>"
+
+    def output(self) -> str:
+        out = ""
+        out += f"function {self.name}({', '.join(p.output() for p in self.parameters)}) -> {self.return_type} {{\n"
+        out += "\n".join(basic_block.output() for basic_block in self.basic_blocks.values())
+        out += f"}}\n\n"
+        return out
 
 
 class BasicBlock:
@@ -165,6 +216,16 @@ class BasicBlock:
     def __repr__(self):
         return f"<BasicBlock {self.name}>"
 
+    def __eq__(self, other):
+        return self.name == other.name
+
+    def output(self) -> str:
+        out = ""
+        out += f"{self.label}:\n"
+        for inst in self.body:
+            out += f"  {inst.output()}\n"
+        return out
+
 
 class Instruction:
     index: int
@@ -173,6 +234,9 @@ class Instruction:
     @property
     def program_point(self):
         return f"{self.parent_block.name}.{self.index}"
+
+    def output(self):
+        raise NotImplementedError
 
 
 class Aop(enum.Enum):
@@ -193,6 +257,9 @@ class ArithInst(Instruction):
         self.left_op = left_op
         self.right_op = right_op
         self.operation = operation
+
+    def output(self):
+        return f"{self.lhs.output()} = $arith {self.operation.value} {self.left_op.output()} {self.right_op.output()}"
 
 
 class Rop(enum.Enum):
@@ -216,6 +283,9 @@ class CmpInst(Instruction):
         self.right_op = right_op
         self.operation = operation
 
+    def output(self):
+        return f"{self.lhs.output()} = $cmp {self.operation.value} {self.left_op.output()} {self.right_op.output()}"
+
 
 class PhiInst(Instruction):
     lhs: Variable
@@ -224,6 +294,9 @@ class PhiInst(Instruction):
     def __init__(self, lhs, ops):
         self.lhs = lhs
         self.ops = ops
+
+    def output(self):
+        return f"{self.lhs.output()} = $phi({', '.join(op.output() for op in self.ops)})"
 
 
 class CopyInst(Instruction):
@@ -234,6 +307,9 @@ class CopyInst(Instruction):
         self.lhs = lhs
         self.rhs = rhs
 
+    def output(self):
+        return f"{self.lhs.output()} = $copy {self.rhs.output()}"
+
 
 class AllocInst(Instruction):
     lhs: Variable
@@ -241,8 +317,8 @@ class AllocInst(Instruction):
     def __init__(self, lhs):
         self.lhs = lhs
 
-    def abstract_execute(self, abstract_store):
-        raise NotImplementedError
+    def output(self):
+        return f"{self.lhs.output()} = $alloc"
 
 
 class AddrofInst(Instruction):
@@ -253,14 +329,20 @@ class AddrofInst(Instruction):
         self.lhs = lhs
         self.target = target
 
+    def output(self):
+        return f"{self.lhs.output()} = $addrof {self.target.output()}"
+
 
 class LoadInst(Instruction):
     lhs: Variable
-    src_ptr: Operand
+    src_ptr: VarOperand
 
     def __init__(self, lhs, src_ptr):
         self.lhs = lhs
         self.src_ptr = src_ptr
+
+    def output(self):
+        return f"{self.lhs.output()} = $load {self.src_ptr.output()}"
 
 
 class StoreInst(Instruction):
@@ -270,6 +352,9 @@ class StoreInst(Instruction):
     def __init__(self, dest, value):
         self.dest = dest
         self.value = value
+
+    def output(self):
+        return f"$store {self.dest.output()} {self.value.output()}"
 
 
 class GepInst(Instruction):
@@ -284,6 +369,9 @@ class GepInst(Instruction):
         self.array_index = array_index
         self.field_name = field_name
 
+    def output(self):
+        return f"{self.lhs.output()} = $gep {self.src_ptr.output()} {self.array_index.output()} {self.field_name}".strip()
+
 
 class SelectInst(Instruction):
     lhs: Variable
@@ -297,6 +385,9 @@ class SelectInst(Instruction):
         self.true_op = true_op
         self.false_op = false_op
 
+    def output(self):
+        return f"{self.lhs.output()} = $select {self.condition.output()} {self.true_op.output()} {self.false_op.output()}"
+
 
 class CallInst(Instruction):
     # direct function call "lhs = func_name(args)".
@@ -308,6 +399,9 @@ class CallInst(Instruction):
         self.lhs = lhs
         self.callee = callee
         self.args = args
+
+    def output(self):
+        return f"{self.lhs.output()} = $call {self.callee}({', '.join(arg.output() for arg in self.args)})"
 
 
 class ICallInst(Instruction):
@@ -321,9 +415,14 @@ class ICallInst(Instruction):
         self.function = function
         self.args = args
 
+    def output(self):
+        return f"{self.lhs.output()} = $icall {self.function.output()}({', '.join(arg.output() for arg in self.args)})"
+
 
 class TerminalInst(Instruction):
-    pass
+    @abc.abstractmethod
+    def targets(self) -> [BasicBlock]:
+        raise NotImplementedError
 
 
 class RetInst(TerminalInst):
@@ -332,6 +431,12 @@ class RetInst(TerminalInst):
     def __init__(self, retval):
         self.retval = retval
 
+    def targets(self):
+        return []
+
+    def output(self):
+        return f"$ret {self.retval.output()}"
+
 
 class JumpInst(TerminalInst):
     label: str
@@ -339,6 +444,12 @@ class JumpInst(TerminalInst):
 
     def __init__(self, label):
         self.label = label
+
+    def targets(self):
+        return [self.target]
+
+    def output(self):
+        return f"$jump {self.label}"
 
 
 class BranchInst(TerminalInst):
@@ -352,3 +463,10 @@ class BranchInst(TerminalInst):
         self.condition = condition
         self.label_true = label_true
         self.label_false = label_false
+
+    def targets(self):
+        return [self.target_true, self.target_false]
+
+    def output(self):
+        return f"$branch {self.condition.output()} {self.label_true} {self.label_false}"
+
