@@ -121,8 +121,10 @@ class Program:
         return None
 
     def get_inst(self, program_point) -> Instruction:
-        # program point is "<function name>.<block label>.<inst index>"
-        func_name, block_label, inst_index = program_point.split(".")
+        # program point is "<function name>.<block label containing .>.<inst index>"
+        func_name = program_point.split(".")[0]
+        block_label = ".".join(program_point.split(".")[1:-1])
+        inst_index = program_point.split(".")[-1]
         func = self.get_function(func_name)
         if func is None:
             raise ValueError(f"Program point {program_point} has invalid function name {func_name}")
@@ -178,7 +180,8 @@ class Function:
     def output(self) -> str:
         out = ""
         out += f"function {self.name}({', '.join(p.output() for p in self.parameters)}) -> {self.return_type} {{\n"
-        out += "\n".join(basic_block.output() for basic_block in self.basic_blocks.values())
+        sorted_blocks = sorted(self.basic_blocks.values(), key=lambda b: b.label)
+        out += "\n".join(basic_block.output() for basic_block in sorted_blocks)
         out += f"}}\n\n"
         return out
 
@@ -201,10 +204,10 @@ class BasicBlock:
 
     def resolve_labels(self):
         if isinstance(self.terminal, JumpInst):
-            self.terminal.target = self.parent_function.basic_blocks[self.terminal.label]
+            self.terminal.target = self.parent_function.basic_blocks.get(self.terminal.label)
         if isinstance(self.terminal, BranchInst):
-            self.terminal.target_true = self.parent_function.basic_blocks[self.terminal.label_true]
-            self.terminal.target_false = self.parent_function.basic_blocks[self.terminal.label_false]
+            self.terminal.target_true = self.parent_function.basic_blocks.get(self.terminal.label_true)
+            self.terminal.target_false = self.parent_function.basic_blocks.get(self.terminal.label_false)
 
     @property
     def name(self):
